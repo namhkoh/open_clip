@@ -38,6 +38,7 @@ from training.train import train_one_epoch, evaluate
 from training.file_utils import pt_load, check_exists, start_sync_process, remote_sync
 
 
+
 LATEST_CHECKPOINT_NAME = "epoch_latest.pt"
 
 
@@ -305,7 +306,8 @@ def main(args):
     optimizer = None
     scaler = None
 
-    if args.train_data or args.dataset_type == "synthetic":
+    # if args.train_data or args.dataset_type == "synthetic":
+    if args.train_data or args.dataset_type == "wildqa":
         assert not args.trace, 'Cannot train with traced model'
 
         exclude = lambda n, p: p.ndim < 2 or "bn" in n or "ln" in n or "bias" in n or 'logit_scale' in n

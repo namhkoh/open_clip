@@ -522,7 +522,83 @@ def get_synthetic_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None
 
     return DataInfo(dataloader, sampler)
 
+class QADataset(Dataset):
+    def __init__(self, images_dir, texts_dir, transform, tokenizer, max_length=512):
+        self.images_dir = images_dir
+        self.texts_dir = texts_dir
+        self.transform = transform
+        self.tokenizer = tokenizer
+        self.max_length = max_length
+        self.filenames = os.listdir(images_dir)
 
+        # Mapping categories to their corresponding text files
+        self.category_to_textfile = {
+            "Agriculture": "test_Agriculture_qa.txt",
+        }
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, idx):
+        image_name = self.filenames[idx]
+        image_path = os.path.join(self.images_dir, image_name)
+        image = Image.open(image_path).convert('RGB')
+        image = self.transform(image)
+
+        # Extract category from the image filename
+        category = self.extract_category(image_name)
+
+        # Load the corresponding text
+        text = self.load_text_for_category(category)
+
+        # Tokenize the text
+        # encoded_text = self.tokenizer(text, return_tensors='pt', padding='max_length', truncation=True, max_length=self.max_length)
+        encoded_text = self.tokenizer([text])[0]
+
+        return image, encoded_text
+
+    def extract_category(self, filename):
+        # Extract the category from the filename
+        parts = filename.split('_')
+        if len(parts) > 1:
+            return parts[1]
+        return None
+
+    def load_text_for_category(self, category):
+        # Load the text for the given category
+        if category in self.category_to_textfile:
+            text_file = self.category_to_textfile[category]
+            text_path = os.path.join(self.texts_dir, text_file)
+            with open(text_path, 'r', encoding='utf-8') as file:
+                return file.read().strip()
+        return ""
+
+def get_wildqa_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
+    print("we've entered the jungle")
+    image_size = preprocess_fn.transforms[0].size
+    image_path = "/nfs/turbo/coe-mihalcea/namhokoh/openclip_dev/src/all_in_one_images"
+    text_path = "/nfs/turbo/coe-mihalcea/namhokoh/openclip_dev/src/all_in_one_txt"
+    dataset = QADataset(images_dir=image_path,transform=preprocess_fn,texts_dir=text_path,tokenizer=tokenizer)
+    num_samples = len(dataset)
+    sampler = DistributedSampler(dataset) if args.distributed and is_train else None
+    shuffle = is_train and sampler is None
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=shuffle,
+        num_workers=args.workers,
+        pin_memory=True,
+        sampler=sampler,
+        drop_last=is_train,
+    )
+    dataloader.num_samples = num_samples
+    dataloader.num_batches = len(dataloader)
+
+    return DataInfo(dataloader, sampler)
+
+    return data_loader
+# Add here the flag!
 def get_dataset_fn(data_path, dataset_type):
     if dataset_type == "webdataset":
         return get_wds_dataset
@@ -530,6 +606,8 @@ def get_dataset_fn(data_path, dataset_type):
         return get_csv_dataset
     elif dataset_type == "synthetic":
         return get_synthetic_dataset
+    elif dataset_type == "wildqa":
+        return get_wildqa_dataset
     elif dataset_type == "auto":
         ext = data_path.split('.')[-1]
         if ext in ['csv', 'tsv']:
@@ -548,6 +626,10 @@ def get_data(args, preprocess_fns, epoch=0, tokenizer=None):
     data = {}
 
     if args.train_data or args.dataset_type == "synthetic":
+        data["train"] = get_dataset_fn(args.train_data, args.dataset_type)(
+            args, preprocess_train, is_train=True, epoch=epoch, tokenizer=tokenizer)
+
+    if args.train_data or args.dataset_type == "wildqa":
         data["train"] = get_dataset_fn(args.train_data, args.dataset_type)(
             args, preprocess_train, is_train=True, epoch=epoch, tokenizer=tokenizer)
 
