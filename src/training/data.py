@@ -531,10 +531,23 @@ class QADataset(Dataset):
         self.max_length = max_length
         self.filenames = os.listdir(images_dir)
 
-        # Mapping categories to their corresponding text files
+        # Define category to text file mapping here
         self.category_to_textfile = {
-            "Agriculture": "test_Agriculture_qa.txt",
+            "Agriculture": "dev_Agriculture_qa.txt",
+            "Geography": "dev_Geography_qa.txt",
+            "Human_Survival": "dev_Human_Survival_qa.txt",
         }
+
+        # Load text files and create a mapping from index to Q&A pair
+        self.text_data = {}
+        for category, text_file in self.category_to_textfile.items():
+            self.text_data[category] = self.load_text_data(os.path.join(texts_dir, text_file))
+
+    def load_text_data(self, text_path):
+        with open(text_path, 'r', encoding='utf-8') as file:
+            lines = file.readlines()
+            # Assuming each line is a Q&A pair
+            return [line.strip() for line in lines]
 
     def __len__(self):
         return len(self.filenames)
@@ -545,32 +558,24 @@ class QADataset(Dataset):
         image = Image.open(image_path).convert('RGB')
         image = self.transform(image)
 
-        # Extract category from the image filename
-        category = self.extract_category(image_name)
+        category, index = self.extract_category_and_index(image_name)
+        text = self.get_text_for_category_and_index(category, index)
 
-        # Load the corresponding text
-        text = self.load_text_for_category(category)
-
-        # Tokenize the text
-        # encoded_text = self.tokenizer(text, return_tensors='pt', padding='max_length', truncation=True, max_length=self.max_length)
         encoded_text = self.tokenizer([text])[0]
 
         return image, encoded_text
 
-    def extract_category(self, filename):
-        # Extract the category from the filename
+    def extract_category_and_index(self, filename):
         parts = filename.split('_')
         if len(parts) > 1:
-            return parts[1]
-        return None
+            category = parts[1]
+            index = int(parts[-1].split('.')[0])  # Assuming the filename format is 'dev_military_0.png'
+            return category, index
+        return None, None
 
-    def load_text_for_category(self, category):
-        # Load the text for the given category
-        if category in self.category_to_textfile:
-            text_file = self.category_to_textfile[category]
-            text_path = os.path.join(self.texts_dir, text_file)
-            with open(text_path, 'r', encoding='utf-8') as file:
-                return file.read().strip()
+    def get_text_for_category_and_index(self, category, index):
+        if category in self.text_data and index < len(self.text_data[category]):
+            return self.text_data[category][index]
         return ""
 
 def get_wildqa_dataset(args, preprocess_fn, is_train, epoch=0, tokenizer=None):
